@@ -3,7 +3,13 @@
     <img alt="SBS Attendance" id="SBS_logo" src="../assets/logo.png" />
     <google-signin-btn :label="isSignedIn" @click="signIn" custom-class="signinButton" />
     <div>
-      <input type="text" v-model="search" id="searchBox" placeholder="Student name or ID" />
+      <input
+        type="text"
+        v-model="search"
+        id="searchBox"
+        @keyup.enter="enter(filteredStudents)"
+        placeholder="Student name or ID"
+      />
       <label for="grade">Student grade:</label>
       <select v-model="grade" id="grade">
         <option value disabled>Please select:</option>
@@ -24,10 +30,11 @@
       </div>
     </div>
     <div
-      v-for="student in filteredStudents"
-      :key="student['User ID']"
+      v-for="(student, index) in filteredStudents"
+      :key="index"
       v-show="isSignedIn == 'Sign Out'"
-      id="students"
+      @click="attended(filteredStudents, index)"
+      class="students"
     >
       <img
         :src="'https://bbk12e1-cdn.myschoolcdn.com/ftpimages/935/user/' + student['Large Filename']"
@@ -72,6 +79,12 @@ export default {
           });
         }
       });
+    },
+    attended: function(filteredStudents, index) {
+      filteredStudents[index]["isPresent"] = true;
+    },
+    enter: function(filteredStudents) {
+      filteredStudents[0]["isPresent"] = true;
     }
   },
   computed: {
@@ -121,7 +134,8 @@ export default {
           (student["name"].toLowerCase().match(this.search.toLowerCase()) ||
             student["Student ID"].match(this.search)) &&
           student["Gender"].match(this.gender) &&
-          student["Grad Year"].match(gradYear)
+          student["Grad Year"].match(gradYear) &&
+          student["isPresent"] == false
         );
       });
     }
