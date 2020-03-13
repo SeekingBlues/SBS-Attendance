@@ -9,6 +9,7 @@
         id="searchBox"
         @keyup.enter="enter(filteredStudents)"
         placeholder="Student name or ID"
+        autofocus
       />
       <label for="grade">Student grade:</label>
       <select v-model="grade" id="grade">
@@ -29,19 +30,38 @@
         <label for="female">Girls</label>
       </div>
     </div>
-    <div
-      v-for="(student, index) in filteredStudents"
-      :key="index"
-      v-show="isSignedIn == 'Sign Out'"
-      @click="attended(filteredStudents, index)"
-      class="students"
-    >
-      <img
-        :src="'https://bbk12e1-cdn.myschoolcdn.com/ftpimages/935/user/' + student['Large Filename']"
-        :alt="student['name']"
-        class="student_image"
-      />
-      <span class="student_name">{{student['name']}}</span>
+    <button type="submit" v-show="isSignedIn == 'Sign Out'" id="submitButton" @click="submit">Submit</button>
+    <div id="remainingStudents">
+      <div
+        v-for="(student, index) in filteredStudents"
+        :key="index"
+        v-show="isSignedIn == 'Sign Out'"
+        @click="attended(filteredStudents, index)"
+        class="students"
+      >
+        <img
+          :src="'https://bbk12e1-cdn.myschoolcdn.com/ftpimages/935/user/' + student['Large Filename']"
+          :alt="student['name']"
+          class="student_image"
+        />
+        <span class="student_name">{{student['name']}}</span>
+      </div>
+    </div>
+    <div id="checkedStudents">
+      <div
+        v-for="(student, index) in checkedStudents"
+        :key="index"
+        v-show="isSignedIn == 'Sign Out'"
+        @click="undo(checkedStudents, index)"
+        class="students"
+      >
+        <img
+          :src="'https://bbk12e1-cdn.myschoolcdn.com/ftpimages/935/user/' + student['Large Filename']"
+          :alt="student['name']"
+          class="student_image"
+        />
+        <span class="student_name">{{student['name']}}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -79,12 +99,107 @@ export default {
           });
         }
       });
+      document.getElementById("searchBox").focus();
     },
     attended: function(filteredStudents, index) {
       filteredStudents[index]["isPresent"] = true;
     },
     enter: function(filteredStudents) {
-      filteredStudents[0]["isPresent"] = true;
+      if (filteredStudents[0] != undefined) {
+        filteredStudents[0]["isPresent"] = true;
+      }
+      this.search = "";
+    },
+    undo: function(checkedStudents, index) {
+      checkedStudents[index]["isPresent"] = false;
+    },
+    submit: function() {
+      this.search = "";
+      var date = new Date();
+      var day = String(date.getDate()).padStart(2, "0");
+      var month = String(date.getMonth() + 1).padStart(2, "0");
+      var year = date.getFullYear();
+      date = month + "/" + day + "/" + year;
+      var absentStudent = this.filteredStudents;
+      var values = [];
+      values.push([date]);
+      absentStudent.forEach(element => {
+        values.push([element["name"]]);
+      });
+      if (this.grade == "") {
+        alert("Please select a grade.");
+      } else if (
+        confirm(
+          `Are you sure that you want to submit attendance for ${this.grade}th grade?`
+        )
+      ) {
+        this.$gapi
+          .request({
+            path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade`,
+            method: "GET"
+          })
+          .then(
+            response => {
+              if (
+                response.result.values == undefined ||
+                response.result.values[0][0] != date
+              ) {
+                this.$gapi
+                  .request({
+                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A:clear`,
+                    method: "POST"
+                  })
+                  .then(
+                    () => {
+                      this.$gapi
+                        .request({
+                          path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A?valueInputOption=RAW`,
+                          method: "PUT",
+                          body: {
+                            range: `${this.grade}th-Grade!A:A`,
+                            majorDimension: "ROWS",
+                            values: values
+                          }
+                        })
+                        .then(
+                          () => {
+                            alert("Submitted successfully.");
+                          },
+                          reason => {
+                            alert("Error: " + reason.result.error.message);
+                          }
+                        );
+                    },
+                    reason => {
+                      alert("Error: " + reason.result.error.message);
+                    }
+                  );
+              } else {
+                this.$gapi
+                  .request({
+                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A:append?valueInputOption=RAW`,
+                    method: "POST",
+                    body: {
+                      range: `${this.grade}th-Grade!A:A`,
+                      majorDimension: "ROWS",
+                      values: values.slice(1)
+                    }
+                  })
+                  .then(
+                    () => {
+                      alert("Updated successfully.");
+                    },
+                    reason => {
+                      alert("Error: " + reason.result.error.message);
+                    }
+                  );
+              }
+            },
+            reason => {
+              alert("Error: " + reason.result.error.message);
+            }
+          );
+      }
     }
   },
   computed: {
@@ -138,9 +253,26 @@ export default {
           student["isPresent"] == false
         );
       });
+    },
+    checkedStudents: function() {
+      return this.studentData.filter(student => {
+        return student["isPresent"] == true;
+      });
     }
   },
   mounted() {
+    var search = document.getElementById("searchBox");
+    var all = document.getElementById("all");
+    var male = document.getElementById("male");
+    var female = document.getElementById("female");
+    var grade = document.getElementById("grade");
+    function focus() {
+      search.focus();
+    }
+    all.addEventListener("change", focus, false);
+    male.addEventListener("change", focus, false);
+    female.addEventListener("change", focus, false);
+    grade.addEventListener("change", focus, false);
     this.$gapi.isSignedIn().then(result => {
       if (result) {
         this.isSignedIn = "Sign Out";
@@ -170,6 +302,18 @@ export default {
 }
 
 #SBS_logo {
+  display: block;
+}
+
+#remainingStudents {
+  float: left;
+}
+
+#checkedStudents {
+  margin-left: 250px;
+}
+
+#submitButton {
   display: block;
 }
 </style>

@@ -44,12 +44,8 @@ export default {
       this.$gapi
         .request({
           path:
-            "https://sheets.googleapis.com/v4/spreadsheets/{spreadsheetId}/values/{range}",
-          method: "GET",
-          params: {
-            spreadsheetId: "1TQjA6ZdRGgQpH2phhl3Mz1HaM8nQQ8YoKQJLCuPqoGs",
-            range: "Sheet1!A1:Z1000"
-          }
+            "https://sheets.googleapis.com/v4/spreadsheets/1TQjA6ZdRGgQpH2phhl3Mz1HaM8nQQ8YoKQJLCuPqoGs/values/Sheet1",
+          method: "GET"
         })
         .then(
           response => {
