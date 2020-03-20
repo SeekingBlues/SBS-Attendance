@@ -233,6 +233,35 @@ export default {
       this.students[this.students.indexOf(student)]["isPresent"] = false;
       this.students[this.students.indexOf(student)]["presentTime"] = "";
     },
+    writeData: function(names, data) {
+      this.$gapi
+        .request({
+          path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A?valueInputOption=RAW`,
+          method: "PUT",
+          body: {
+            range: `${this.grade}th-Grade!A:A`,
+            majorDimension: "ROWS",
+            values: names
+          }
+        })
+        .then(() => {
+          this.$gapi.request({
+            path:
+              "https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values:batchUpdate",
+            method: "POST",
+            body: {
+              valueInputOption: "RAW",
+              data: data
+            }
+          });
+        })
+        .then(() => {
+          alert("Submitted successfully.");
+        })
+        .catch(reason => {
+          alert("Error: " + reason.result.error.message);
+        });
+    },
     submit: function() {
       var date = new Date();
       var day = String(date.getDate()).padStart(2, "0");
@@ -275,65 +304,12 @@ export default {
                     path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!B:B:clear`,
                     method: "POST"
                   })
-                  .then(() => {
-                    this.$gapi
-                      .request({
-                        path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A?valueInputOption=RAW`,
-                        method: "PUT",
-                        body: {
-                          range: `${this.grade}th-Grade!A:A`,
-                          majorDimension: "ROWS",
-                          values: names
-                        }
-                      })
-                      .then(() => {
-                        this.$gapi
-                          .request({
-                            path:
-                              "https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values:batchUpdate",
-                            method: "POST",
-                            body: {
-                              valueInputOption: "RAW",
-                              data: data
-                            }
-                          })
-                          .then(() => {
-                            alert("Submitted successfully.");
-                          });
-                      });
-                  })
+                  .then(this.writeData(names, data))
                   .catch(reason => {
                     alert("Error: " + reason.result.error.message);
                   });
               } else {
-                this.$gapi
-                  .request({
-                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A?valueInputOption=RAW`,
-                    method: "PUT",
-                    body: {
-                      range: `${this.grade}th-Grade!A:A`,
-                      majorDimension: "ROWS",
-                      values: names
-                    }
-                  })
-                  .then(() => {
-                    this.$gapi
-                      .request({
-                        path:
-                          "https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values:batchUpdate",
-                        method: "POST",
-                        body: {
-                          valueInputOption: "RAW",
-                          data: data
-                        }
-                      })
-                      .then(() => {
-                        alert("Submitted successfully.");
-                      });
-                  })
-                  .catch(reason => {
-                    alert("Error: " + reason.result.error.message);
-                  });
+                this.writeData(names, data);
               }
             },
             reason => {
