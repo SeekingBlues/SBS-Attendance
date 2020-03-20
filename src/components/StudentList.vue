@@ -1,6 +1,7 @@
 <template>
   <div class="StudentList">
     <img alt="SBS Attendance" id="SBS_logo" src="../assets/logo.png" />
+    <img :src="image" alt="User image" id="user_image" v-show="image != ''" />
     <google-signin-btn :label="isSignedIn" @click="signIn" custom-class="signinButton" />
     <div>
       <input
@@ -12,7 +13,7 @@
         autofocus
       />
       <label for="grade">Student grade:</label>
-      <select v-model="grade" id="grade">
+      <select v-model="grade" id="grade" @change="getData" :disabled="isSignedIn == 'Sign In'">
         <option value disabled>Please select:</option>
         <option value="7">7th Grade</option>
         <option value="8">8th Grade</option>
@@ -22,21 +23,47 @@
         <option value="12">12th Grade</option>
       </select>
       <div>
-        <input type="radio" name="gender" id="all" value v-model="gender" checked />
+        <input
+          type="radio"
+          name="gender"
+          id="all"
+          value
+          v-model="gender"
+          checked
+          :disabled="isSignedIn == 'Sign In'"
+        />
         <label for="all">All students</label>
-        <input type="radio" name="gender" id="male" value="Male" v-model="gender" />
+        <input
+          type="radio"
+          name="gender"
+          id="male"
+          value="Male"
+          v-model="gender"
+          :disabled="isSignedIn == 'Sign In'"
+        />
         <label for="male">Boys</label>
-        <input type="radio" name="gender" id="female" value="Female" v-model="gender" />
+        <input
+          type="radio"
+          name="gender"
+          id="female"
+          value="Female"
+          v-model="gender"
+          :disabled="isSignedIn == 'Sign In'"
+        />
         <label for="female">Girls</label>
       </div>
     </div>
-    <button type="submit" v-show="isSignedIn == 'Sign Out'" id="submitButton" @click="submit">Submit</button>
-    <div id="remainingStudents">
+    <button
+      type="submit"
+      v-show="students.toString() != ''"
+      id="submitButton"
+      @click="submit"
+    >Submit</button>
+    <div id="remainingStudents" v-show="students.toString() != ''">
       <div
         v-for="(student, index) in filteredStudents"
         :key="index"
-        v-show="isSignedIn == 'Sign Out'"
-        @click="attended(filteredStudents, index)"
+        @click="attended(student)"
         class="students"
       >
         <img
@@ -47,12 +74,11 @@
         <span class="student_name">{{student['name']}}</span>
       </div>
     </div>
-    <div id="checkedStudents">
+    <div id="checkedStudents" v-show="students.toString() != ''">
       <div
         v-for="(student, index) in checkedStudents"
         :key="index"
-        v-show="isSignedIn == 'Sign Out'"
-        @click="undo(checkedStudents, index)"
+        @click="undo(student)"
         class="students"
       >
         <img
@@ -74,10 +100,11 @@ export default {
       isSignedIn: "",
       search: "",
       gender: "",
-      grade: ""
+      grade: "",
+      image: "",
+      students: []
     };
   },
-  props: ["studentData"],
   methods: {
     signIn: function() {
       this.$gapi.isSignedIn().then(result => {
@@ -86,8 +113,8 @@ export default {
             .signIn()
             .then(user => {
               alert("Signed in as " + user.name + ".");
+              this.image = user.image;
               this.isSignedIn = "Sign Out";
-              this.$emit("getData");
             })
             .catch(err => {
               alert("Error: " + err.error + ".");
@@ -96,39 +123,138 @@ export default {
           this.$gapi.signOut().then(() => {
             alert("User signed out.");
             this.isSignedIn = "Sign In";
+            this.image = "";
+            this.students = [];
           });
         }
       });
       document.getElementById("searchBox").focus();
     },
-    attended: function(filteredStudents, index) {
-      filteredStudents[index]["isPresent"] = true;
+    convertJSON: function(lines) {
+      var result = [];
+      var headers = lines[0];
+
+      for (let i = 1; i < lines.length; i++) {
+        var obj = {};
+        var currentline = lines[i];
+        for (let j = 0; j < headers.length; j++) {
+          obj[headers[j]] = currentline[j];
+        }
+        if (obj["Nickname"] == "") {
+          let fullname = obj["First Name"] + " " + obj["Last Name"];
+          obj["name"] = fullname;
+        } else {
+          let fullname = obj["Nickname"] + " " + obj["Last Name"];
+          obj["name"] = fullname;
+        }
+        obj["isPresent"] = false;
+        obj["presentTime"] = "";
+        result.push(obj);
+      }
+      return result;
+    },
+    getData: function() {
+      this.$gapi
+        .request({
+          path:
+            "https://sheets.googleapis.com/v4/spreadsheets/1TQjA6ZdRGgQpH2phhl3Mz1HaM8nQQ8YoKQJLCuPqoGs/values/Sheet1",
+          method: "GET"
+        })
+        .then(
+          response => {
+            document.getElementById("grade").setAttribute("disabled", "");
+            var date = new Date();
+            var year = date.getFullYear();
+            var month = date.getMonth();
+            var gradYear;
+            if (month >= 7) {
+              year++;
+            }
+            switch (this.grade) {
+              case "7":
+                gradYear = (year + 5).toString();
+                break;
+
+              case "8":
+                gradYear = (year + 4).toString();
+                break;
+
+              case "9":
+                gradYear = (year + 3).toString();
+                break;
+
+              case "10":
+                gradYear = (year + 2).toString();
+                break;
+
+              case "11":
+                gradYear = (year + 1).toString();
+                break;
+
+              case "12":
+                gradYear = year.toString();
+                break;
+            }
+            this.students = this.convertJSON(response.result.values).filter(
+              student => student["Grad Year"] == gradYear
+            );
+          },
+          reason => {
+            alert("Error: " + reason.result.error.message);
+          }
+        );
+    },
+    getTime: function() {
+      var date = new Date();
+      var hour = String(date.getHours()).padStart(2, "0");
+      var minute = String(date.getMinutes()).padStart(2, "0");
+      var second = String(date.getSeconds()).padStart(2, "0");
+      date = hour + ":" + minute + ":" + second;
+      return date;
+    },
+    attended: function(student) {
+      this.students[this.students.indexOf(student)]["isPresent"] = true;
+      this.students[this.students.indexOf(student)][
+        "presentTime"
+      ] = this.getTime();
     },
     enter: function(filteredStudents) {
       if (filteredStudents[0] != undefined) {
-        filteredStudents[0]["isPresent"] = true;
+        this.students[this.students.indexOf(filteredStudents[0])][
+          "isPresent"
+        ] = true;
+        this.students[this.students.indexOf(filteredStudents[0])][
+          "presentTime"
+        ] = this.getTime();
       }
       this.search = "";
     },
-    undo: function(checkedStudents, index) {
-      checkedStudents[index]["isPresent"] = false;
+    undo: function(student) {
+      this.students[this.students.indexOf(student)]["isPresent"] = false;
+      this.students[this.students.indexOf(student)]["presentTime"] = "";
     },
     submit: function() {
-      this.search = "";
       var date = new Date();
       var day = String(date.getDate()).padStart(2, "0");
       var month = String(date.getMonth() + 1).padStart(2, "0");
       var year = date.getFullYear();
       date = month + "/" + day + "/" + year;
-      var absentStudent = this.filteredStudents;
-      var values = [];
-      values.push([date]);
-      absentStudent.forEach(element => {
-        values.push([element["name"]]);
+      var names = [[date]];
+      this.students.forEach(element => {
+        names.push([element["name"]]);
       });
-      if (this.grade == "") {
-        alert("Please select a grade.");
-      } else if (
+      var data = [];
+      this.students.forEach(element => {
+        if (element["isPresent"]) {
+          data.push({
+            range: `${this.grade}th-Grade!B${this.students.indexOf(element) +
+              2}`,
+            majorDimension: "ROWS",
+            values: [[element["presentTime"]]]
+          });
+        }
+      });
+      if (
         confirm(
           `Are you sure that you want to submit attendance for ${this.grade}th grade?`
         )
@@ -146,53 +272,68 @@ export default {
               ) {
                 this.$gapi
                   .request({
-                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A:clear`,
+                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!B:B:clear`,
                     method: "POST"
                   })
-                  .then(
-                    () => {
-                      this.$gapi
-                        .request({
-                          path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A?valueInputOption=RAW`,
-                          method: "PUT",
-                          body: {
-                            range: `${this.grade}th-Grade!A:A`,
-                            majorDimension: "ROWS",
-                            values: values
-                          }
-                        })
-                        .then(
-                          () => {
+                  .then(() => {
+                    this.$gapi
+                      .request({
+                        path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A?valueInputOption=RAW`,
+                        method: "PUT",
+                        body: {
+                          range: `${this.grade}th-Grade!A:A`,
+                          majorDimension: "ROWS",
+                          values: names
+                        }
+                      })
+                      .then(() => {
+                        this.$gapi
+                          .request({
+                            path:
+                              "https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values:batchUpdate",
+                            method: "POST",
+                            body: {
+                              valueInputOption: "RAW",
+                              data: data
+                            }
+                          })
+                          .then(() => {
                             alert("Submitted successfully.");
-                          },
-                          reason => {
-                            alert("Error: " + reason.result.error.message);
-                          }
-                        );
-                    },
-                    reason => {
-                      alert("Error: " + reason.result.error.message);
-                    }
-                  );
+                          });
+                      });
+                  })
+                  .catch(reason => {
+                    alert("Error: " + reason.result.error.message);
+                  });
               } else {
                 this.$gapi
                   .request({
-                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A:append?valueInputOption=RAW`,
-                    method: "POST",
+                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A?valueInputOption=RAW`,
+                    method: "PUT",
                     body: {
                       range: `${this.grade}th-Grade!A:A`,
                       majorDimension: "ROWS",
-                      values: values.slice(1)
+                      values: names
                     }
                   })
-                  .then(
-                    () => {
-                      alert("Updated successfully.");
-                    },
-                    reason => {
-                      alert("Error: " + reason.result.error.message);
-                    }
-                  );
+                  .then(() => {
+                    this.$gapi
+                      .request({
+                        path:
+                          "https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values:batchUpdate",
+                        method: "POST",
+                        body: {
+                          valueInputOption: "RAW",
+                          data: data
+                        }
+                      })
+                      .then(() => {
+                        alert("Submitted successfully.");
+                      });
+                  })
+                  .catch(reason => {
+                    alert("Error: " + reason.result.error.message);
+                  });
               }
             },
             reason => {
@@ -204,59 +345,20 @@ export default {
   },
   computed: {
     filteredStudents: function() {
-      var date = new Date();
-      var year = date.getFullYear();
-      var month = date.getMonth();
-      var schoolYear;
-      var gradYear;
-      if (month >= 8) {
-        schoolYear = year++;
-      } else {
-        schoolYear = year;
-      }
-
-      switch (this.grade) {
-        case "7":
-          gradYear = (schoolYear + 5).toString();
-          break;
-
-        case "8":
-          gradYear = (schoolYear + 4).toString();
-          break;
-
-        case "9":
-          gradYear = (schoolYear + 3).toString();
-          break;
-
-        case "10":
-          gradYear = (schoolYear + 2).toString();
-          break;
-
-        case "11":
-          gradYear = (schoolYear + 1).toString();
-          break;
-
-        case "12":
-          gradYear = schoolYear.toString();
-          break;
-
-        default:
-          gradYear = "";
-          break;
-      }
-      return this.studentData.filter(student => {
+      return this.students.filter(student => {
         return (
           (student["name"].toLowerCase().match(this.search.toLowerCase()) ||
             student["Student ID"].match(this.search)) &&
           student["Gender"].match(this.gender) &&
-          student["Grad Year"].match(gradYear) &&
           student["isPresent"] == false
         );
       });
     },
     checkedStudents: function() {
-      return this.studentData.filter(student => {
-        return student["isPresent"] == true;
+      return this.students.filter(student => {
+        return (
+          student["Gender"].match(this.gender) && student["isPresent"] == true
+        );
       });
     }
   },
@@ -276,7 +378,6 @@ export default {
     this.$gapi.isSignedIn().then(result => {
       if (result) {
         this.isSignedIn = "Sign Out";
-        this.$emit("getData");
       } else {
         this.isSignedIn = "Sign In";
       }
@@ -315,5 +416,14 @@ export default {
 
 #submitButton {
   display: block;
+  cursor: pointer;
+}
+
+#user_image {
+  border-radius: 50%;
+}
+
+.students {
+  cursor: pointer;
 }
 </style>
