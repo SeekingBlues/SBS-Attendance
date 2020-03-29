@@ -1,7 +1,7 @@
 <template>
   <div class="StudentList">
     <img alt="SBS Attendance" id="SBS_logo" src="../assets/logo.png" />
-    <img :src="image" alt="User image" id="user_image" v-show="image != ''" />
+    <img :src="image" alt="User image" id="user_image" v-if="image != ''" />
     <google-signin-btn :label="isSignedIn" @click="signIn" custom-class="signinButton" />
     <div>
       <input
@@ -12,8 +12,16 @@
         placeholder="Student name or ID"
         autofocus
       />
+      <label for="event">Event type:</label>
+      <select v-model="event" id="event">
+        <option value="AB">1</option>
+        <option value="CD">2</option>
+        <option value="EF">3</option>
+        <option value="GH">4</option>
+        <option value="IJ">5</option>
+      </select>
       <label for="grade">Student grade:</label>
-      <select v-model="grade" id="grade" @change="getData" :disabled="isSignedIn == 'Sign In'">
+      <select v-model="grade" id="grade" @change="setData" :disabled="isSignedIn == 'Sign In'">
         <option value disabled>Please select:</option>
         <option value="7">7th Grade</option>
         <option value="8">8th Grade</option>
@@ -55,11 +63,11 @@
     </div>
     <button
       type="submit"
-      v-show="students.toString() != ''"
+      v-if="students && students.length && isSignedIn == 'Sign Out'"
       id="submitButton"
       @click="submit"
     >Submit</button>
-    <div id="remainingStudents" v-show="students.toString() != ''">
+    <div id="remainingStudents" v-if="students && students.length && isSignedIn == 'Sign Out'">
       <div
         v-for="(student, index) in filteredStudents"
         :key="index"
@@ -74,7 +82,7 @@
         <span class="student_name">{{student['name']}}</span>
       </div>
     </div>
-    <div id="checkedStudents" v-show="students.toString() != ''">
+    <div id="checkedStudents" v-if="students && students.length && isSignedIn == 'Sign Out'">
       <div
         v-for="(student, index) in checkedStudents"
         :key="index"
@@ -102,7 +110,8 @@ export default {
       gender: "",
       grade: "",
       image: "",
-      students: []
+      students: [],
+      event: "AB"
     };
   },
   methods: {
@@ -115,6 +124,24 @@ export default {
               alert("Signed in as " + user.name + ".");
               this.image = user.image;
               this.isSignedIn = "Sign Out";
+              this.getData().then(result => {
+                if (
+                  localStorage.students != "undefined" &&
+                  localStorage.students != JSON.stringify(result)
+                ) {
+                  if (
+                    confirm(
+                      "You have attendace that is not saved. Do you want to continue taking the previous attendance?"
+                    )
+                  ) {
+                    this.students = JSON.parse(localStorage.students);
+                  } else if (this.grade != "") {
+                    this.students = result;
+                  }
+                } else if (this.grade != "") {
+                  this.students = result;
+                }
+              });
             })
             .catch(err => {
               alert("Error: " + err.error + ".");
@@ -122,9 +149,8 @@ export default {
         } else {
           this.$gapi.signOut().then(() => {
             alert("User signed out.");
-            this.isSignedIn = "Sign In";
             this.image = "";
-            this.students = [];
+            this.isSignedIn = "Sign In";
           });
         }
       });
@@ -154,7 +180,7 @@ export default {
       return result;
     },
     getData: function() {
-      this.$gapi
+      return this.$gapi
         .request({
           path:
             "https://sheets.googleapis.com/v4/spreadsheets/1TQjA6ZdRGgQpH2phhl3Mz1HaM8nQQ8YoKQJLCuPqoGs/values/Sheet1",
@@ -162,7 +188,6 @@ export default {
         })
         .then(
           response => {
-            document.getElementById("grade").setAttribute("disabled", "");
             var date = new Date();
             var year = date.getFullYear();
             var month = date.getMonth();
@@ -195,7 +220,7 @@ export default {
                 gradYear = year.toString();
                 break;
             }
-            this.students = this.convertJSON(response.result.values).filter(
+            return this.convertJSON(response.result.values).filter(
               student => student["Grad Year"] == gradYear
             );
           },
@@ -203,6 +228,11 @@ export default {
             alert("Error: " + reason.result.error.message);
           }
         );
+    },
+    setData: function() {
+      this.getData().then(result => {
+        this.students = result;
+      });
     },
     getTime: function() {
       var date = new Date();
@@ -217,6 +247,7 @@ export default {
       this.students[this.students.indexOf(student)][
         "presentTime"
       ] = this.getTime();
+      localStorage.students = JSON.stringify(this.students);
     },
     enter: function(filteredStudents) {
       if (filteredStudents[0] != undefined) {
@@ -228,18 +259,20 @@ export default {
         ] = this.getTime();
       }
       this.search = "";
+      localStorage.students = JSON.stringify(this.students);
     },
     undo: function(student) {
       this.students[this.students.indexOf(student)]["isPresent"] = false;
       this.students[this.students.indexOf(student)]["presentTime"] = "";
+      localStorage.students = JSON.stringify(this.students);
     },
     writeData: function(names, data) {
       this.$gapi
         .request({
-          path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!A:A?valueInputOption=RAW`,
+          path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!${this.event[0]}:${this.event[0]}?valueInputOption=RAW`,
           method: "PUT",
           body: {
-            range: `${this.grade}th-Grade!A:A`,
+            range: `${this.grade}th-Grade!${this.event[0]}:${this.event[0]}`,
             majorDimension: "ROWS",
             values: names
           }
@@ -272,12 +305,19 @@ export default {
       this.students.forEach(element => {
         names.push([element["name"]]);
       });
-      var data = [];
+      var data = [
+        {
+          range: `${this.grade}th-Grade!${this.event[1]}1`,
+          majorDimension: "ROWS",
+          values: [[(this.event[0].toLowerCase().charCodeAt(0) - 97) / 2 + 1]]
+        }
+      ];
       this.students.forEach(element => {
         if (element["isPresent"]) {
           data.push({
-            range: `${this.grade}th-Grade!B${this.students.indexOf(element) +
-              2}`,
+            range: `${this.grade}th-Grade!${
+              this.event[1]
+            }${this.students.indexOf(element) + 2}`,
             majorDimension: "ROWS",
             values: [[element["presentTime"]]]
           });
@@ -295,13 +335,14 @@ export default {
           })
           .then(
             response => {
+              var index = this.event[0].toLowerCase().charCodeAt(0) - 97;
               if (
                 response.result.values == undefined ||
-                response.result.values[0][0] != date
+                response.result.values[0][index] != date
               ) {
                 this.$gapi
                   .request({
-                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!B:B:clear`,
+                    path: `https://sheets.googleapis.com/v4/spreadsheets/1hf-s8uJXXTP_-XsXm8PtRQhsks48a-CWGtlEtroIzm4/values/${this.grade}th-Grade!${this.event[1]}:${this.event[1]}:clear`,
                     method: "POST"
                   })
                   .then(this.writeData(names, data))
@@ -317,6 +358,8 @@ export default {
             }
           );
       }
+      this.setData();
+      localStorage.students = JSON.stringify(this.students);
     }
   },
   computed: {
@@ -339,6 +382,9 @@ export default {
     }
   },
   mounted() {
+    this.grade = localStorage.grade || "";
+    this.gender = localStorage.gender || "";
+    this.event = localStorage.event || "AB";
     var search = document.getElementById("searchBox");
     var all = document.getElementById("all");
     var male = document.getElementById("male");
@@ -358,6 +404,17 @@ export default {
         this.isSignedIn = "Sign In";
       }
     });
+  },
+  watch: {
+    grade(newGrade) {
+      localStorage.grade = newGrade;
+    },
+    gender(newGender) {
+      localStorage.gender = newGender;
+    },
+    event(newEvent) {
+      localStorage.event = newEvent;
+    }
   }
 };
 </script>
@@ -401,5 +458,9 @@ export default {
 
 .students {
   cursor: pointer;
+}
+
+select {
+  display: block;
 }
 </style>
