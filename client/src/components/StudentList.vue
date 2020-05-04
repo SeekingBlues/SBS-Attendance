@@ -396,6 +396,10 @@ export default {
     }
   },
   mounted() {
+    window.addEventListener("beforeunload", (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    });
     this.socket = io();
     this.socket.on("student-update", data => {
       if (data.grade == this.grade && data.event == this.event) {
