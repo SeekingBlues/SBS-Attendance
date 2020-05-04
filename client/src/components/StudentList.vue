@@ -75,11 +75,11 @@
         class="students"
       >
         <img
-          :src="'https://bbk12e1-cdn.myschoolcdn.com/ftpimages/935/user/' + student['Large Filename']"
-          :alt="student['name']"
+          :src="'https://bbk12e1-cdn.myschoolcdn.com/ftpimages/935/user/' + student.large_filename"
+          :alt="student.name"
           class="student_image"
         />
-        <span class="student_name">{{student['name']}}</span>
+        <span class="student_name">{{student.name}}</span>
       </div>
     </div>
     <div id="checkedStudents" v-if="students && students.length && isSignedIn == 'Sign Out'">
@@ -90,17 +90,18 @@
         class="students"
       >
         <img
-          :src="'https://bbk12e1-cdn.myschoolcdn.com/ftpimages/935/user/' + student['Large Filename']"
-          :alt="student['name']"
+          :src="'https://bbk12e1-cdn.myschoolcdn.com/ftpimages/935/user/' + student.large_filename"
+          :alt="student.name"
           class="student_image"
         />
-        <span class="student_name">{{student['name']}}</span>
+        <span class="student_name">{{student.name}}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import io from "socket.io-client";
 export default {
   name: "StudentList",
   data: function() {
@@ -126,8 +127,8 @@ export default {
               this.isSignedIn = "Sign Out";
               this.getData().then(result => {
                 if (
-                  localStorage.students != "undefined" &&
-                  localStorage.students != JSON.stringify(result)
+                  localStorage.getItem("students") &&
+                  localStorage.getItem("students") != JSON.stringify(result)
                 ) {
                   if (
                     confirm(
@@ -164,17 +165,24 @@ export default {
         var obj = {};
         var currentline = lines[i];
         for (let j = 0; j < headers.length; j++) {
-          obj[headers[j]] = currentline[j];
+          obj[headers[j].replace(/( |-)/g, "_").toLowerCase()] = currentline[j];
         }
-        if (obj["Nickname"] == "") {
-          let fullname = obj["First Name"] + " " + obj["Last Name"];
-          obj["name"] = fullname;
+        if (obj.nickname == "") {
+          obj.name = obj.first_name + " " + obj.last_name;
         } else {
-          let fullname = obj["Nickname"] + " " + obj["Last Name"];
-          obj["name"] = fullname;
+          obj.name = obj.nickname + " " + obj.last_name;
         }
-        obj["isPresent"] = false;
-        obj["presentTime"] = "";
+        obj.isPresent = false;
+        obj.presentTime = "";
+        [
+          "user_id",
+          "first_name",
+          "last_name",
+          "thumb_filename",
+          "role",
+          "e_mail",
+          "nickname"
+        ].forEach(item => delete obj[item]);
         result.push(obj);
       }
       return result;
@@ -221,7 +229,7 @@ export default {
                 break;
             }
             return this.convertJSON(response.result.values).filter(
-              student => student["Grad Year"] == gradYear
+              student => student.grad_year == gradYear
             );
           },
           reason => {
@@ -243,28 +251,36 @@ export default {
       return date;
     },
     attended: function(student) {
-      this.students[this.students.indexOf(student)]["isPresent"] = true;
-      this.students[this.students.indexOf(student)][
-        "presentTime"
-      ] = this.getTime();
-      localStorage.students = JSON.stringify(this.students);
+      this.students[this.students.indexOf(student)].isPresent = true;
+      this.students[
+        this.students.indexOf(student)
+      ].presentTime = this.getTime();
+      this.update();
     },
     enter: function(filteredStudents) {
-      if (filteredStudents[0] != undefined) {
-        this.students[this.students.indexOf(filteredStudents[0])][
-          "isPresent"
-        ] = true;
-        this.students[this.students.indexOf(filteredStudents[0])][
-          "presentTime"
-        ] = this.getTime();
+      if (filteredStudents[0]) {
+        this.students[
+          this.students.indexOf(filteredStudents[0])
+        ].isPresent = true;
+        this.students[
+          this.students.indexOf(filteredStudents[0])
+        ].presentTime = this.getTime();
       }
       this.search = "";
-      localStorage.students = JSON.stringify(this.students);
+      this.update();
     },
     undo: function(student) {
-      this.students[this.students.indexOf(student)]["isPresent"] = false;
-      this.students[this.students.indexOf(student)]["presentTime"] = "";
-      localStorage.students = JSON.stringify(this.students);
+      this.students[this.students.indexOf(student)].isPresent = false;
+      this.students[this.students.indexOf(student)].presentTime = "";
+      this.update();
+    },
+    update: function() {
+      localStorage.setItem("students", JSON.stringify(this.students));
+      this.socket.emit("student-update", {
+        grade: this.grade,
+        event: this.event,
+        students: this.students
+      });
     },
     writeData: function(names, data) {
       this.$gapi
@@ -303,7 +319,7 @@ export default {
       date = month + "/" + day + "/" + year;
       var names = [[date]];
       this.students.forEach(element => {
-        names.push([element["name"]]);
+        names.push([element.name]);
       });
       var data = [
         {
@@ -313,13 +329,13 @@ export default {
         }
       ];
       this.students.forEach(element => {
-        if (element["isPresent"]) {
+        if (element.isPresent) {
           data.push({
             range: `${this.grade}th-Grade!${
               this.event[1]
             }${this.students.indexOf(element) + 2}`,
             majorDimension: "ROWS",
-            values: [[element["presentTime"]]]
+            values: [[element.presentTime]]
           });
         }
       });
@@ -359,32 +375,37 @@ export default {
           );
       }
       this.setData();
-      localStorage.students = JSON.stringify(this.students);
+      this.update();
     }
   },
   computed: {
     filteredStudents: function() {
       return this.students.filter(student => {
         return (
-          (student["name"].toLowerCase().match(this.search.toLowerCase()) ||
-            student["Student ID"].match(this.search)) &&
-          student["Gender"].match(this.gender) &&
-          student["isPresent"] == false
+          (student.name.toLowerCase().match(this.search.toLowerCase()) ||
+            student.student_id.match(this.search)) &&
+          student.gender.match(this.gender) &&
+          student.isPresent == false
         );
       });
     },
     checkedStudents: function() {
       return this.students.filter(student => {
-        return (
-          student["Gender"].match(this.gender) && student["isPresent"] == true
-        );
+        return student.gender.match(this.gender) && student.isPresent == true;
       });
     }
   },
   mounted() {
-    this.grade = localStorage.grade || "";
-    this.gender = localStorage.gender || "";
-    this.event = localStorage.event || "AB";
+    this.socket = io();
+    this.socket.on("student-update", data => {
+      if (data.grade == this.grade && data.event == this.event) {
+        this.students = data.students;
+        localStorage.setItem("students", JSON.stringify(this.students));
+      }
+    });
+    this.grade = localStorage.getItem("grade") || "";
+    this.gender = localStorage.getItem("gender") || "";
+    this.event = localStorage.getItem("event") || "AB";
     var search = document.getElementById("searchBox");
     var all = document.getElementById("all");
     var male = document.getElementById("male");
@@ -407,13 +428,13 @@ export default {
   },
   watch: {
     grade(newGrade) {
-      localStorage.grade = newGrade;
+      localStorage.setItem("grade", newGrade);
     },
     gender(newGender) {
-      localStorage.gender = newGender;
+      localStorage.setItem("gender", newGender);
     },
     event(newEvent) {
-      localStorage.event = newEvent;
+      localStorage.setItem("event", newEvent);
     }
   }
 };
